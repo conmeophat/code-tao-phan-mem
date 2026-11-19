@@ -135,7 +135,10 @@ def create_project(
 
     project_title = name.replace("_", " ").replace("-", " ").title()
     files: dict[str, str] = {
-        f"src/{package_name}/__init__.py": '"""Application package."""\\n\\n__version__ = "0.1.0"\\n',
+        f"src/{package_name}/__init__.py": (
+            '"""Application package."""' + chr(10) * 2
+            + '__version__ = "0.1.0"' + chr(10)
+        ),
         f"src/{package_name}/__main__.py": f'''"""Run {project_title} as a Python module."""
 
 from {package_name}.main import main
@@ -209,7 +212,17 @@ py -m unittest discover -s tests -v
 
 This is a starter scaffold. Add and test your own business features before using it in production.
 ''',
-        ".gitignore": "__pycache__/\\n*.py[cod]\\n.venv/\\nvenv/\\n.env\\n*.log\\n.pytest_cache/\\nbuild/\\ndist/\\n*.egg-info/\\n",
+        ".gitignore": """__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.log
+.pytest_cache/
+build/
+dist/
+*.egg-info/
+""",
     }
 
     try:
@@ -218,7 +231,7 @@ This is a starter scaffold. Add and test your own business features before using
         for relative_path, file_content in files.items():
             file_path = project_dir / relative_path
             file_path.parent.mkdir(parents=True, exist_ok=True)
-            file_path.write_text(file_content, encoding="utf-8", newline="\\n")
+            file_path.write_text(file_content, encoding="utf-8")
     except Exception:
         shutil.rmtree(project_dir, ignore_errors=True)
         raise
