@@ -51,23 +51,31 @@ class Application:
         started: list[ModuleDefinition] = []
         try:
             for module in self.registry.all(enabled_only=True):
+                # Include the current module before setup so its teardown hook
+                # can clean up resources if setup partially succeeds then fails.
+                started.append(module)
                 if module.setup is not None:
                     module.setup(self)
-                started.append(module)
         except Exception as exc:
-            for module in reversed(started):
-                if module.teardown is not None:
+            for started_module in reversed(started):
+                if started_module.teardown is not None:
                     try:
-                        module.teardown(self)
+                        started_module.teardown(self)
                     except Exception:
-                        self.logger.exception("Rollback failed for module '%s'", module.name)
+                        self.logger.exception(
+                            "Rollback failed for module '%s'", started_module.name
+                        )
             raise ModuleLifecycleError(
                 f"Application startup failed while setting up module '{module.name}'"
             ) from exc
 
         self._started_modules = started
         self._started = True
-        self.logger.info("%s started in %s mode", self.config.app_name, self.config.environment)
+        self.logger.info(
+            "%s started in %s mode",
+            self.config.app_name,
+            self.config.environment,
+        )
 
     def run_module(self, name: str) -> Any:
         """Execute one enabled module and return its result."""
@@ -105,12 +113,24 @@ class Application:
 
         if failures:
             names = ", ".join(name for name, _ in failures)
-            raise ModuleLifecycleError(f"Teardown failed for module(s): {names}") from failures[0][1]
+            raise ModuleLifecycleError(
+                f"Teardown failed for module(s): {names}"
+            ) from failures[0][1]
 
     def __enter__(self) -> "Application":
         self.start()
         return self
 
     def __exit__(self, exc_type: object, exc: object, traceback: object) -> bool:
+        # Preserve an exception from the application body if cleanup also fails.
+        if exc is not None:
+            try:
+                self.close()
+            except Exception:
+                self.logger.exception(
+                    "Application cleanup failed while handling another exception"
+                )
+            return False
+
         self.close()
         return False
