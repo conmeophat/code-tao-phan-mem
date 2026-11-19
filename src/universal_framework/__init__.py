@@ -11,6 +11,10 @@ from universal_framework.errors import (
     ModuleLifecycleError,
 )
 from universal_framework.modules import ModuleDefinition, ModuleRegistry
+from universal_framework.project_generator import (
+    SUPPORTED_PROJECT_TYPES,
+    create_project,
+)
 
 __all__ = [
     "Application",
@@ -23,6 +27,8 @@ __all__ = [
     "ModuleExecutionError",
     "ModuleLifecycleError",
     "ModuleRegistry",
+    "SUPPORTED_PROJECT_TYPES",
+    "create_project",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
