@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+import json
+import keyword
 from pathlib import Path
 import re
 import shutil
 
 
 SUPPORTED_PROJECT_TYPES = ("cli", "web", "desktop")
+SUPPORTED_DATABASES = ("none", "sqlite")
 _NAME_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,49}")
+_WINDOWS_RESERVED_NAMES = {
+    "con", "prn", "aux", "nul", "conin$", "conout$",
+    *(f"com{number}" for number in range(1, 10)),
+    *(f"lpt{number}" for number in range(1, 10)),
+}
 
 
 def _normalise_name(name: str) -> tuple[str, str]:
@@ -21,6 +29,14 @@ def _normalise_name(name: str) -> tuple[str, str]:
 
     directory_name = name.lower()
     package_name = directory_name.replace("-", "_")
+    if not package_name.isidentifier() or keyword.iskeyword(package_name):
+        raise ValueError(
+            f"Project name '{name}' becomes an invalid Python package name."
+        )
+    if directory_name.casefold() in _WINDOWS_RESERVED_NAMES:
+        raise ValueError(
+            f"Project name '{name}' is reserved by Windows and cannot be used as a folder."
+        )
     return directory_name, package_name
 
 
@@ -107,10 +123,116 @@ if __name__ == "__main__":
 '''.format(title=project_title)
 
 
+_SQLITE_STORAGE_TEMPLATE = '''"""Small JSON key-value storage backed by SQLite.
+
+This starter is intended for a single application process. For concurrent
+multi-process workloads, design and test a more specific persistence layer.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import sqlite3
+from typing import Any
+
+
+class SQLiteStore:
+    """Persist JSON-compatible values under string keys."""
+
+    def __init__(self, database_path: str | Path = "data/app.db") -> None:
+        raw_path = str(database_path)
+        if raw_path != ":memory:":
+            path = Path(raw_path).expanduser()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            raw_path = str(path)
+
+        self._connection = sqlite3.connect(raw_path)
+        self._closed = False
+        self._connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS kv_store (
+                key TEXT PRIMARY KEY,
+                value_json TEXT NOT NULL
+            )
+            """
+        )
+        self._connection.commit()
+
+    def _ensure_open(self) -> None:
+        if self._closed:
+            raise RuntimeError("SQLiteStore is already closed")
+
+    @staticmethod
+    def _validate_key(key: str) -> None:
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError("key must be a non-empty string")
+
+    def set(self, key: str, value: Any) -> None:
+        """Insert or replace a JSON-compatible value."""
+        self._ensure_open()
+        self._validate_key(key)
+        serialized = json.dumps(value, ensure_ascii=False, allow_nan=False)
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO kv_store (key, value_json)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json
+                """,
+                (key, serialized),
+            )
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Read a value, returning default when the key does not exist."""
+        self._ensure_open()
+        self._validate_key(key)
+        row = self._connection.execute(
+            "SELECT value_json FROM kv_store WHERE key = ?", (key,)
+        ).fetchone()
+        return default if row is None else json.loads(row[0])
+
+    def delete(self, key: str) -> bool:
+        """Delete a key and report whether a row was removed."""
+        self._ensure_open()
+        self._validate_key(key)
+        with self._connection:
+            cursor = self._connection.execute(
+                "DELETE FROM kv_store WHERE key = ?", (key,)
+            )
+        return cursor.rowcount > 0
+
+    def keys(self) -> tuple[str, ...]:
+        """Return all stored keys in sorted order."""
+        self._ensure_open()
+        rows = self._connection.execute(
+            "SELECT key FROM kv_store ORDER BY key"
+        ).fetchall()
+        return tuple(row[0] for row in rows)
+
+    def close(self) -> None:
+        """Close the connection. Repeated calls are safe."""
+        if not self._closed:
+            self._connection.close()
+            self._closed = True
+
+    def __enter__(self) -> "SQLiteStore":
+        self._ensure_open()
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> bool:
+        self.close()
+        return False
+'''
+
+
 def create_project(
     name: str,
     destination: str | Path = ".",
     project_type: str = "cli",
+    *,
+    database: str = "none",
+    description: str | None = None,
 ) -> Path:
     """Create a starter project and return its absolute directory path.
 
@@ -125,15 +247,28 @@ def create_project(
         allowed = ", ".join(SUPPORTED_PROJECT_TYPES)
         raise ValueError(f"Unsupported project type '{project_type}'. Choose: {allowed}")
 
+    if not isinstance(database, str) or database.strip().lower() not in SUPPORTED_DATABASES:
+        allowed = ", ".join(SUPPORTED_DATABASES)
+        raise ValueError(f"database must be one of: {allowed}")
+    normalized_database = database.strip().lower()
+
+    if description is None:
+        project_description = f"A {normalized_type} Python application"
+    elif not isinstance(description, str) or not description.strip():
+        raise ValueError("description must be a non-empty, single-line string")
+    else:
+        project_description = description.strip()
+    if len(project_description) > 200 or "\n" in project_description or "\r" in project_description:
+        raise ValueError("description must be a single line of at most 200 characters")
+
     parent = Path(destination).expanduser().resolve()
     parent.mkdir(parents=True, exist_ok=True)
     project_dir = parent / directory_name
-
-    # mkdir() is the atomic no-overwrite operation. Do not delete the target
-    # unless this process successfully created the directory itself.
     project_dir.mkdir()
 
     project_title = name.replace("_", " ").replace("-", " ").title()
+    distribution_name = directory_name.replace("_", "-")
+    description_toml = json.dumps(project_description, ensure_ascii=False)
     files: dict[str, str] = {
         f"src/{package_name}/__init__.py": (
             '"""Application package."""' + chr(10) * 2
@@ -168,14 +303,14 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "{directory_name.replace("_", "-")}"
+name = "{distribution_name}"
 version = "0.1.0"
-description = "A {normalized_type} Python application"
+description = {description_toml}
 requires-python = ">=3.11"
 dependencies = []
 
 [project.scripts]
-{directory_name.replace("_", "-")} = "{package_name}.main:main"
+{distribution_name} = "{package_name}.main:main"
 
 [tool.setuptools]
 package-dir = {{ "" = "src" }}
@@ -185,11 +320,15 @@ where = ["src"]
 ''',
         "README.md": f'''# {project_title}
 
-Starter project generated by Universal Python Software Framework.
+{project_description}
+
+Generated by Universal Python Software Framework.
 
 ## Requirements
 
 - Python 3.11 or newer
+- SQLite storage uses Python's standard library and needs no separate database server.
+{"" if normalized_type != "desktop" else "- Tkinter must be available in your Python installation."}
 
 ## Setup (Windows PowerShell)
 
@@ -210,7 +349,9 @@ py -m {package_name}
 py -m unittest discover -s tests -v
 ~~~
 
-This is a starter scaffold. Add and test your own business features before using it in production.
+{"## SQLite storage" + chr(10) + chr(10) + "The optional SQLiteStore stores JSON-compatible values by key:" + chr(10) + chr(10) + "~~~python" + chr(10) + f"from {package_name}.storage import SQLiteStore" + chr(10) * 2 + 'with SQLiteStore("data/app.db") as store:' + chr(10) + '    store.set("settings", {"language": "vi"})' + chr(10) + '    settings = store.get("settings", default={})' + chr(10) + '    print(settings)' + chr(10) + "~~~" + chr(10) if normalized_database == "sqlite" else ""}
+
+This is a starter scaffold. Add and test your own business features before production use.
 ''',
         ".gitignore": """__pycache__/
 *.py[cod]
@@ -222,8 +363,34 @@ venv/
 build/
 dist/
 *.egg-info/
+data/
 """,
     }
+
+    if normalized_database == "sqlite":
+        files[f"src/{package_name}/storage.py"] = _SQLITE_STORAGE_TEMPLATE
+        files["tests/test_storage.py"] = f'''"""Tests for the generated SQLite storage module."""
+
+import unittest
+
+from {package_name}.storage import SQLiteStore
+
+
+class SQLiteStoreTests(unittest.TestCase):
+    def test_round_trip_unicode_json_and_delete(self) -> None:
+        with SQLiteStore(":memory:") as store:
+            value = {{"language": "Tiếng Việt", "items": [1, 2, 3]}}
+            store.set("settings", value)
+            self.assertEqual(store.get("settings"), value)
+            self.assertEqual(store.keys(), ("settings",))
+            self.assertTrue(store.delete("settings"))
+            self.assertFalse(store.delete("settings"))
+            self.assertEqual(store.get("settings", default={{}}), {{}})
+
+
+if __name__ == "__main__":
+    unittest.main()
+'''
 
     try:
         (project_dir / "src" / package_name).mkdir(parents=True)

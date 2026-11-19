@@ -1,23 +1,21 @@
 # Universal Python Software Framework
 
-A reusable foundation and project generator for building different kinds of Python applications.
+A reusable foundation, interactive wizard, and project generator for building Python applications.
 
-> The framework creates safe, structured starter projects and reusable infrastructure. It does not automatically invent every feature or guarantee that every possible application will work without further development. Each real-world feature still needs clear requirements, implementation, integration, and tests.
+> The framework creates structured starter projects and reusable infrastructure. It does not automatically invent every feature or guarantee that every possible application will work without further development. Each real-world feature still needs clear requirements, implementation, integration, and tests.
 
-## Version 0.2.0
+## Version 0.3.0
 
 ### Included
 
-- **Application core:** predictable startup, module execution, and shutdown.
-- **Module registry:** register independent features by unique names.
-- **Configuration:** validated settings from environment variables.
-- **Logging and error handling:** consistent diagnostics and framework exceptions.
-- **Project generator:** create CLI, web, and desktop starter projects.
-- **Command-line interface:** generate a new project with one command.
-- **Safety checks:** validate names, reject path traversal, and never overwrite an existing project.
-- **Automated tests:** unit tests run in GitHub Actions across supported Python versions.
+- Application core, module registry, configuration, logging, and error handling.
+- Project generator for CLI, web, and desktop starter projects.
+- Interactive wizard: answer prompts instead of remembering command-line flags.
+- Optional SQLite pack: persistent JSON key-value storage using Python's standard library.
+- Safety checks: reject invalid Python package names, Windows reserved folder names, path traversal, and attempts to overwrite existing projects.
+- Automated tests: generator, wizard, and SQLite behavior run in GitHub Actions.
 
-The framework core uses the Python standard library and supports Python 3.11 or newer. The web starter uses Python's built-in HTTP server. The desktop starter uses Tkinter, which must be available in the Python installation.
+The framework supports Python 3.11 or newer. The web starter uses Python's built-in HTTP server and binds to localhost only. The desktop starter uses Tkinter, which must be available in the Python installation.
 
 ## Install the framework on Windows
 
@@ -29,29 +27,37 @@ py -m venv .venv
 ./.venv/Scripts/python.exe -m pip install -e ".[dev]"
 ~~~
 
-## Create a new application
+## Option 1: Interactive wizard
 
-The command format is:
+Run:
 
 ~~~powershell
-py -m universal_framework create --name PROJECT_NAME --type PROJECT_TYPE --destination PARENT_FOLDER
+py -m universal_framework wizard
 ~~~
 
-Supported project types:
+The wizard asks for the project name, application type, storage option, destination folder, and a short description.
 
-| Type | Starter application | Dependencies |
+## Option 2: One command
+
+~~~powershell
+py -m universal_framework create --name PROJECT_NAME --type PROJECT_TYPE --database DATABASE --destination PARENT_FOLDER
+~~~
+
+| Option | Values | Default |
 |---|---|---|
-| cli | Command-line application | Python standard library |
-| web | Local web server and starter HTML page | Python standard library |
-| desktop | Basic desktop window | Tkinter |
+| --name | English letters, numbers, underscore and hyphen; must start with a letter | Required |
+| --type | cli, web, desktop | cli |
+| --database | none, sqlite | none |
+| --destination | Parent folder path | Current folder |
+| --description | One-line description, up to 200 characters | Generated automatically |
 
-For example, create a command-line inventory program:
+Example: generate an inventory CLI with SQLite storage:
 
 ~~~powershell
-py -m universal_framework create --name QuanLyKho --type cli --destination .
+py -m universal_framework create --name QuanLyKho --type cli --database sqlite --destination . --description "Inventory management starter"
 ~~~
 
-This creates a new folder named quanlykho. Then run:
+Then run:
 
 ~~~powershell
 cd quanlykho
@@ -61,23 +67,32 @@ py -m venv .venv
 ./.venv/Scripts/python.exe -m unittest discover -s tests -v
 ~~~
 
-To create a web starter instead:
+## Generated application types
 
-~~~powershell
-py -m universal_framework create --name WebsiteDemo --type web --destination .
+| Type | Starter | Dependencies |
+|---|---|---|
+| CLI | Argument-based command-line app | Python standard library |
+| Web | Local HTTP server and starter HTML page | Python standard library |
+| Desktop | Basic Tkinter window | Tkinter |
+
+The generated web starter is for local development, not production hosting. A production web service needs additional security, deployment, and operational configuration.
+
+## Optional SQLite storage
+
+When created with the SQLite option, the project includes a storage module and tests. Example:
+
+~~~python
+from quanlykho.storage import SQLiteStore
+
+with SQLiteStore("data/app.db") as store:
+    store.set("settings", {"language": "vi", "currency": "VND"})
+    settings = store.get("settings", default={})
+    print(settings)
 ~~~
 
-Open the generated project, install it, and run its module. The starter server listens on 127.0.0.1:8000, so it is intended for local development, not direct public production hosting.
-
-To create a desktop starter:
-
-~~~powershell
-py -m universal_framework create --name DesktopDemo --type desktop --destination .
-~~~
+This starter stores JSON-compatible values by key. It is intended for a simple, single-process application, not a complete ORM or a substitute for designing the application's data model.
 
 ## Use the framework core in Python
-
-Register an independent feature module:
 
 ~~~python
 from universal_framework import Application, AppConfig, ModuleDefinition
@@ -101,29 +116,9 @@ with app:
 
 Modules may define optional setup and teardown functions for acquiring and releasing resources. Setup runs in registration order; teardown runs in reverse order.
 
-## Configuration
-
-The framework reads these optional environment variables:
-
-| Variable | Default | Purpose |
-|---|---|---|
-| APP_NAME | My Python App | Display name |
-| APP_ENV | development | Environment label |
-| APP_LOG_LEVEL | INFO | DEBUG, INFO, WARNING, ERROR, or CRITICAL |
-| APP_DATA_DIR | data | Path reserved for application data |
-
-PowerShell example:
-
-~~~powershell
-$env:APP_NAME = "Inventory Manager"
-$env:APP_ENV = "development"
-$env:APP_LOG_LEVEL = "DEBUG"
-py your_app.py
-~~~
-
 ## Tests and quality checks
 
-Run the framework test suite:
+Run:
 
 ~~~powershell
 py -m unittest discover -s tests -v
@@ -135,32 +130,20 @@ Or use pytest after installing the development extra:
 py -m pytest
 ~~~
 
-GitHub Actions runs the unit tests on pushes and pull requests using Python 3.11, 3.12, 3.13, and 3.14.
-
-## Design principles
-
-1. Keep business logic separate from UI and infrastructure.
-2. Validate user input at system boundaries.
-3. Never overwrite existing project files without explicit, safe support.
-4. Log useful diagnostic information without logging secrets.
-5. Keep optional integrations optional.
-6. Test modules independently and integrations together.
-7. Never advertise a feature as production-ready until it has been tested in its target environment.
+GitHub Actions runs the suite on pushes and pull requests using Python 3.11, 3.12, 3.13, and 3.14.
 
 ## Roadmap
 
-- [x] Initialize repository and define project direction
-- [x] Implement application lifecycle and configuration
-- [x] Implement module registry, errors, and logging
-- [x] Add example application and unit tests
-- [x] Add continuous integration test workflow
-- [x] Add project generator for CLI, web, and desktop starters
-- [x] Add command-line interface
-- [ ] Add richer web UI adapters (for example, FastAPI)
-- [ ] Add richer desktop UI adapters
-- [ ] Add database and API adapters
-- [ ] Add security helpers and integration testing guidance
-- [ ] Add interactive project wizard and feature templates
+- [x] Application core, module registry, configuration, logging, and errors
+- [x] CLI, web, and desktop starter generation
+- [x] Interactive project wizard
+- [x] Optional SQLite key-value storage pack
+- [x] Safety checks and automated tests
+- [ ] Richer web UI adapters
+- [ ] Richer desktop UI adapters
+- [ ] Database migrations and app-specific data model templates
+- [ ] API client/server templates
+- [ ] Feature specification that scaffolds selected modules
 
 ## License
 

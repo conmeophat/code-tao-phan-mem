@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "universal-python-software-framework"
-version = "0.2.0"
-description = "A reusable foundation and project generator for Python applications"
+version = "0.3.0"
+description = "A reusable foundation, interactive wizard, and project generator for Python applications"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }

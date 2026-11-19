@@ -1,10 +1,8 @@
-"""Tests for safe project generation."""
+"""Tests for safe project generation and the interactive CLI."""
 
 import ast
-from contextlib import redirect_stdout
-import io
-import os
 from pathlib import Path
+import os
 import subprocess
 import sys
 import tempfile
@@ -59,6 +57,7 @@ class ProjectGeneratorTests(unittest.TestCase):
                     f"Parse{project_type.title()}",
                     temporary_directory,
                     project_type,
+                    database="sqlite",
                 )
                 for source_file in project_dir.rglob("*.py"):
                     with self.subTest(project_type=project_type, file=source_file):
@@ -90,25 +89,96 @@ class ProjectGeneratorTests(unittest.TestCase):
             )
             self.assertIn("Hello, Ada! Welcome to Sales Manager.", completed.stdout)
 
+    def test_generated_sqlite_feature_round_trips_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            project_dir = create_project(
+                "StorageDemo",
+                temporary_directory,
+                database="sqlite",
+            )
+            package_root = str(project_dir / "src")
+            environment = os.environ.copy()
+            environment["PYTHONPATH"] = package_root + os.pathsep + environment.get(
+                "PYTHONPATH", ""
+            )
+            program = (
+                "from storagedemo.storage import SQLiteStore\n"
+                "with SQLiteStore(':memory:') as store:\n"
+                "    store.set('settings', {'language': 'Tiếng Việt'})\n"
+                "    assert store.get('settings') == {'language': 'Tiếng Việt'}\n"
+                "    assert store.keys() == ('settings',)\n"
+                "    assert store.delete('settings') is True\n"
+                "    assert store.delete('settings') is False\n"
+            )
+            subprocess.run(
+                [sys.executable, "-c", program],
+                cwd=project_dir,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=15,
+            )
+            self.assertTrue(
+                (project_dir / "src" / "storagedemo" / "storage.py").is_file()
+            )
+            self.assertTrue((project_dir / "tests" / "test_storage.py").is_file())
+
     def test_framework_cli_creates_project(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            output = io.StringIO()
-            with redirect_stdout(output):
-                exit_code = framework_cli(
-                    [
-                        "create",
-                        "--name",
-                        "CreatedByCli",
-                        "--type",
-                        "cli",
-                        "--destination",
-                        temporary_directory,
-                    ]
-                )
+            output: list[str] = []
+            exit_code = framework_cli(
+                [
+                    "create",
+                    "--name",
+                    "CreatedByCli",
+                    "--type",
+                    "cli",
+                    "--database",
+                    "sqlite",
+                    "--destination",
+                    temporary_directory,
+                    "--description",
+                    "An inventory demo",
+                ],
+                output_fn=output.append,
+            )
 
             self.assertEqual(exit_code, 0)
-            self.assertTrue((Path(temporary_directory) / "createdbycli").is_dir())
-            self.assertIn("Project created:", output.getvalue())
+            generated = Path(temporary_directory) / "createdbycli"
+            self.assertTrue(generated.is_dir())
+            self.assertTrue((generated / "src" / "createdbycli" / "storage.py").is_file())
+            self.assertIn("Project created:", output[0])
+            project_config = tomllib.loads(
+                (generated / "pyproject.toml").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                project_config["project"]["description"],
+                "An inventory demo",
+            )
+
+    def test_interactive_wizard_collects_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            answers = iter(
+                [
+                    "WizardApp",
+                    "cli",
+                    "sqlite",
+                    temporary_directory,
+                    "A wizard-generated example",
+                ]
+            )
+            output: list[str] = []
+            result = framework_cli(
+                ["wizard"],
+                input_fn=lambda prompt: next(answers),
+                output_fn=output.append,
+            )
+            generated = Path(temporary_directory) / "wizardapp"
+
+            self.assertEqual(result, 0)
+            self.assertTrue((generated / "src" / "wizardapp" / "storage.py").is_file())
+            self.assertTrue(any("WIZARD" in line for line in output))
 
     def test_generated_pyproject_has_console_entry_point(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -121,8 +191,19 @@ class ProjectGeneratorTests(unittest.TestCase):
                 "sales_manager.main:main",
             )
 
-    def test_rejects_path_traversal_and_invalid_names(self) -> None:
-        invalid_names = ("../escape", "two words", "", "_hidden", "bad/name")
+    def test_rejects_path_traversal_invalid_and_reserved_names(self) -> None:
+        invalid_names = (
+            "../escape",
+            "two words",
+            "",
+            "_hidden",
+            "bad/name",
+            "Class",
+            "def",
+            "CON",
+            "nul",
+            "COM1",
+        )
         with tempfile.TemporaryDirectory() as temporary_directory:
             for name in invalid_names:
                 with self.subTest(name=name):
@@ -131,12 +212,25 @@ class ProjectGeneratorTests(unittest.TestCase):
 
             self.assertEqual(list(Path(temporary_directory).iterdir()), [])
 
-    def test_rejects_unknown_project_type(self) -> None:
+    def test_rejects_unknown_project_type_or_database(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             with self.assertRaises(ValueError):
-                create_project("UnknownApp", temporary_directory, "mobile")
+                create_project("UnknownType", temporary_directory, "mobile")
             with self.assertRaises(ValueError):
-                create_project("UnknownApp", temporary_directory, None)  # type: ignore[arg-type]
+                create_project("UnknownType", temporary_directory, None)  # type: ignore[arg-type]
+            with self.assertRaises(ValueError):
+                create_project("UnknownDatabase", temporary_directory, database="nosql")
+
+    def test_rejects_invalid_description(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with self.assertRaises(ValueError):
+                create_project("BadDescription", temporary_directory, description="  ")
+            with self.assertRaises(ValueError):
+                create_project(
+                    "BadDescription",
+                    temporary_directory,
+                    description="line 1\nline 2",
+                )
 
     def test_never_overwrites_existing_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
