@@ -1,7 +1,9 @@
 """Tests for safe project generation."""
 
+import ast
 from pathlib import Path
 import tempfile
+import tomllib
 import unittest
 
 from universal_framework.project_generator import create_project
@@ -15,6 +17,7 @@ class ProjectGeneratorTests(unittest.TestCase):
             self.assertTrue((project_dir / "pyproject.toml").is_file())
             self.assertTrue((project_dir / "README.md").is_file())
             self.assertTrue((project_dir / "src" / "myfirstapp" / "main.py").is_file())
+            self.assertTrue((project_dir / "src" / "myfirstapp" / "__main__.py").is_file())
             self.assertTrue((project_dir / "tests" / "test_smoke.py").is_file())
             self.assertEqual(project_dir.parent, Path(temporary_directory).resolve())
 
@@ -43,6 +46,29 @@ class ProjectGeneratorTests(unittest.TestCase):
             self.assertIn("ThreadingHTTPServer", web_main)
             self.assertIn("tkinter", desktop_main)
 
+    def test_all_generated_python_files_parse(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            for project_type in ("cli", "web", "desktop"):
+                project_dir = create_project(
+                    f"Parse{project_type.title()}",
+                    temporary_directory,
+                    project_type,
+                )
+                for source_file in project_dir.rglob("*.py"):
+                    with self.subTest(project_type=project_type, file=source_file):
+                        ast.parse(source_file.read_text(encoding="utf-8"))
+
+    def test_generated_pyproject_has_console_entry_point(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            project_dir = create_project("Sales-Manager", temporary_directory)
+            config = tomllib.loads(
+                (project_dir / "pyproject.toml").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                config["project"]["scripts"]["sales-manager"],
+                "sales_manager.main:main",
+            )
+
     def test_rejects_path_traversal_and_invalid_names(self) -> None:
         invalid_names = ("../escape", "two words", "", "_hidden", "bad/name")
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -57,6 +83,8 @@ class ProjectGeneratorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             with self.assertRaises(ValueError):
                 create_project("UnknownApp", temporary_directory, "mobile")
+            with self.assertRaises(ValueError):
+                create_project("UnknownApp", temporary_directory, None)  # type: ignore[arg-type]
 
     def test_never_overwrites_existing_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
