@@ -1,11 +1,17 @@
 """Tests for safe project generation."""
 
 import ast
+from contextlib import redirect_stdout
+import io
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import tomllib
 import unittest
 
+from universal_framework.cli import main as framework_cli
 from universal_framework.project_generator import create_project
 
 
@@ -57,6 +63,52 @@ class ProjectGeneratorTests(unittest.TestCase):
                 for source_file in project_dir.rglob("*.py"):
                     with self.subTest(project_type=project_type, file=source_file):
                         ast.parse(source_file.read_text(encoding="utf-8"))
+
+    def test_generated_cli_project_runs_end_to_end(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            project_dir = create_project("Sales-Manager", temporary_directory)
+            package_root = str(project_dir / "src")
+            environment = os.environ.copy()
+            environment["PYTHONPATH"] = package_root + os.pathsep + environment.get(
+                "PYTHONPATH", ""
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "sales_manager",
+                    "--name",
+                    "Ada",
+                ],
+                cwd=project_dir,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=15,
+            )
+            self.assertIn("Hello, Ada! Welcome to Sales Manager.", completed.stdout)
+
+    def test_framework_cli_creates_project(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output = io.StringIO()
+            with redirect_stdout(output):
+                exit_code = framework_cli(
+                    [
+                        "create",
+                        "--name",
+                        "CreatedByCli",
+                        "--type",
+                        "cli",
+                        "--destination",
+                        temporary_directory,
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertTrue((Path(temporary_directory) / "createdbycli").is_dir())
+            self.assertIn("Project created:", output.getvalue())
 
     def test_generated_pyproject_has_console_entry_point(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
