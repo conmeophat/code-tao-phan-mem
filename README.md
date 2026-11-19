@@ -1,67 +1,85 @@
 # Universal Python Software Framework
 
-A reusable, beginner-friendly foundation for building different kinds of Python applications with Python.
+A reusable foundation and project generator for building different kinds of Python applications.
 
-> This framework supplies reusable infrastructure; it does not automatically invent every feature. Each product still needs clear requirements, feature-specific code, integration, and tests. No software can honestly guarantee zero bugs or 100% success in every environment.
+> The framework creates safe, structured starter projects and reusable infrastructure. It does not automatically invent every feature or guarantee that every possible application will work without further development. Each real-world feature still needs clear requirements, implementation, integration, and tests.
 
-## What is included in version 0.1.0
+## Version 0.2.0
 
-- **Application lifecycle:** start, run, and close an application predictably.
+### Included
+
+- **Application core:** predictable startup, module execution, and shutdown.
 - **Module registry:** register independent features by unique names.
-- **Configuration:** read and validate common settings from environment variables.
-- **Logging:** one consistent console logging setup without duplicate handlers.
-- **Error types:** distinguish configuration, lifecycle, and feature execution errors.
-- **Example and tests:** a small example plus standard-library unit tests.
+- **Configuration:** validated settings from environment variables.
+- **Logging and error handling:** consistent diagnostics and framework exceptions.
+- **Project generator:** create CLI, web, and desktop starter projects.
+- **Command-line interface:** generate a new project with one command.
+- **Safety checks:** validate names, reject path traversal, and never overwrite an existing project.
+- **Automated tests:** unit tests run in GitHub Actions across supported Python versions.
 
-The core has no mandatory third-party runtime dependencies and supports Python 3.11 or newer.
+The framework core uses the Python standard library and supports Python 3.11 or newer. The web starter uses Python's built-in HTTP server. The desktop starter uses Tkinter, which must be available in the Python installation.
 
-## Project structure
+## Install the framework on Windows
 
-```text
-.
-├── src/
-│   └── universal_framework/
-│       ├── __init__.py
-│       ├── app.py
-│       ├── config.py
-│       ├── errors.py
-│       ├── logging_config.py
-│       └── modules.py
-├── examples/
-│   └── hello_app.py
-├── tests/
-│   ├── test_config.py
-│   └── test_modules.py
-├── .github/
-│   └── workflows/
-│       └── tests.yml
-├── pyproject.toml
-└── README.md
-```
+Open PowerShell in the cloned repository folder:
 
-## Quick start on Windows PowerShell
-
-Run these commands from the repository folder:
-
-```powershell
+~~~powershell
 py -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-.\.venv\Scripts\python.exe examples\hello_app.py
-```
+./.venv/Scripts/python.exe -m pip install --upgrade pip
+./.venv/Scripts/python.exe -m pip install -e ".[dev]"
+~~~
 
-Expected example output includes a greeting similar to:
+## Create a new application
 
-```text
-Hello from My First App!
-```
+The command format is:
 
-## Add a feature module
+~~~powershell
+py -m universal_framework create --name PROJECT_NAME --type PROJECT_TYPE --destination PARENT_FOLDER
+~~~
 
-A feature is represented by a `ModuleDefinition`. Its `handler` receives the running `Application` and can return a result.
+Supported project types:
 
-```python
+| Type | Starter application | Dependencies |
+|---|---|---|
+| cli | Command-line application | Python standard library |
+| web | Local web server and starter HTML page | Python standard library |
+| desktop | Basic desktop window | Tkinter |
+
+For example, create a command-line inventory program:
+
+~~~powershell
+py -m universal_framework create --name QuanLyKho --type cli --destination .
+~~~
+
+This creates a new folder named quanlykho. Then run:
+
+~~~powershell
+cd quanlykho
+py -m venv .venv
+./.venv/Scripts/python.exe -m pip install -e .
+./.venv/Scripts/python.exe -m quanlykho
+./.venv/Scripts/python.exe -m unittest discover -s tests -v
+~~~
+
+To create a web starter instead:
+
+~~~powershell
+py -m universal_framework create --name WebsiteDemo --type web --destination .
+~~~
+
+Open the generated project, install it, and run its module. The starter server listens on 127.0.0.1:8000, so it is intended for local development, not direct public production hosting.
+
+To create a desktop starter:
+
+~~~powershell
+py -m universal_framework create --name DesktopDemo --type desktop --destination .
+~~~
+
+## Use the framework core in Python
+
+Register an independent feature module:
+
+~~~python
 from universal_framework import Application, AppConfig, ModuleDefinition
 
 
@@ -79,9 +97,9 @@ app.register_module(
 with app:
     result = app.run_module("calculate_total")
     print(result)  # 360
-```
+~~~
 
-A module may also define optional `setup(app)` and `teardown(app)` functions for opening and closing resources. Setup runs in registration order; teardown runs in reverse order.
+Modules may define optional setup and teardown functions for acquiring and releasing resources. Setup runs in registration order; teardown runs in reverse order.
 
 ## Configuration
 
@@ -89,45 +107,45 @@ The framework reads these optional environment variables:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `APP_NAME` | `My Python App` | Display name |
-| `APP_ENV` | `development` | Environment label |
-| `APP_LOG_LEVEL` | `INFO` | DEBUG, INFO, WARNING, ERROR, or CRITICAL |
-| `APP_DATA_DIR` | `data` | Path reserved for application data |
+| APP_NAME | My Python App | Display name |
+| APP_ENV | development | Environment label |
+| APP_LOG_LEVEL | INFO | DEBUG, INFO, WARNING, ERROR, or CRITICAL |
+| APP_DATA_DIR | data | Path reserved for application data |
 
 PowerShell example:
 
-```powershell
+~~~powershell
 $env:APP_NAME = "Inventory Manager"
 $env:APP_ENV = "development"
 $env:APP_LOG_LEVEL = "DEBUG"
 py your_app.py
-```
+~~~
 
-## Development and quality checks
+## Tests and quality checks
 
-Run the built-in tests:
+Run the framework test suite:
 
-```powershell
+~~~powershell
 py -m unittest discover -s tests -v
-```
+~~~
 
-Run pytest when the development extra is installed:
+Or use pytest after installing the development extra:
 
-```powershell
+~~~powershell
 py -m pytest
-```
+~~~
 
-GitHub Actions runs the test suite on pushes and pull requests.
+GitHub Actions runs the unit tests on pushes and pull requests using Python 3.11, 3.12, 3.13, and 3.14.
 
 ## Design principles
 
 1. Keep business logic separate from UI and infrastructure.
-2. Prefer explicit configuration over hidden behavior.
-3. Validate inputs at boundaries.
+2. Validate user input at system boundaries.
+3. Never overwrite existing project files without explicit, safe support.
 4. Log useful diagnostic information without logging secrets.
 5. Keep optional integrations optional.
-6. Test modules independently and test integrations together.
-7. Never advertise a feature as working until it has been exercised in its target environment.
+6. Test modules independently and integrations together.
+7. Never advertise a feature as production-ready until it has been tested in its target environment.
 
 ## Roadmap
 
@@ -136,11 +154,13 @@ GitHub Actions runs the test suite on pushes and pull requests.
 - [x] Implement module registry, errors, and logging
 - [x] Add example application and unit tests
 - [x] Add continuous integration test workflow
-- [ ] Add project template generator
-- [ ] Add optional CLI and desktop UI adapters
-- [ ] Add optional web UI adapter
+- [x] Add project generator for CLI, web, and desktop starters
+- [x] Add command-line interface
+- [ ] Add richer web UI adapters (for example, FastAPI)
+- [ ] Add richer desktop UI adapters
 - [ ] Add database and API adapters
 - [ ] Add security helpers and integration testing guidance
+- [ ] Add interactive project wizard and feature templates
 
 ## License
 
