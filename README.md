@@ -1,70 +1,147 @@
 # Universal Python Software Framework
 
-A reusable, beginner-friendly foundation for building different kinds of Python applications.
+A reusable, beginner-friendly foundation for building different kinds of Python applications with Python.
 
-> This project provides reusable infrastructure, not a magical generator for every possible app. Each product feature still needs its own requirements, implementation, and tests. No software can honestly guarantee zero bugs or 100% success in every environment.
+> This framework supplies reusable infrastructure; it does not automatically invent every feature. Each product still needs clear requirements, feature-specific code, integration, and tests. No software can honestly guarantee zero bugs or 100% success in every environment.
 
-## Goals
+## What is included in version 0.1.0
 
-- Keep application startup and configuration consistent.
-- Load features as independent modules.
-- Provide shared logging and error handling.
-- Keep business logic separate from the user interface.
-- Make automated tests and documentation part of the default workflow.
-- Start small and grow into CLI, desktop, web, automation, or data applications.
+- **Application lifecycle:** start, run, and close an application predictably.
+- **Module registry:** register independent features by unique names.
+- **Configuration:** read and validate common settings from environment variables.
+- **Logging:** one consistent console logging setup without duplicate handlers.
+- **Error types:** distinguish configuration, lifecycle, and feature execution errors.
+- **Example and tests:** a small example plus standard-library unit tests.
 
-## Current status
+The core has no mandatory third-party runtime dependencies and supports Python 3.11 or newer.
 
-**Milestone 0 – repository initialized.** The first implementation will provide a lightweight Python core that uses only the standard library. Optional UI, database, API, and AI integrations will be added as separate adapters so the core does not require every dependency.
-
-## Planned structure
+## Project structure
 
 ```text
-universal_python_framework/
-├── framework/
-│   ├── app.py              # Application lifecycle
-│   ├── config.py           # Environment-based settings
-│   ├── errors.py           # Framework exceptions
-│   ├── logging_config.py   # Central logging
-│   └── modules.py          # Feature/module registry
+.
+├── src/
+│   └── universal_framework/
+│       ├── __init__.py
+│       ├── app.py
+│       ├── config.py
+│       ├── errors.py
+│       ├── logging_config.py
+│       └── modules.py
 ├── examples/
-│   └── hello_app.py        # Minimal example application
+│   └── hello_app.py
 ├── tests/
 │   ├── test_config.py
 │   └── test_modules.py
-├── .gitignore
+├── .github/
+│   └── workflows/
+│       └── tests.yml
 ├── pyproject.toml
 └── README.md
 ```
 
-## Requirements
+## Quick start on Windows PowerShell
 
-- Python 3.11 or newer
-- No third-party dependency is required for the core
+Run these commands from the repository folder:
 
-## Quick start
+```powershell
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe examples\hello_app.py
+```
 
-The exact commands and API will be documented after the initial core implementation is committed.
+Expected example output includes a greeting similar to:
 
-## Development principles
+```text
+Hello from My First App!
+```
 
-1. Explicit behavior is better than hidden magic.
-2. Validate inputs at system boundaries.
-3. Fail visibly and log enough context to diagnose problems.
-4. Keep optional integrations optional.
-5. Test the core and each adapter independently.
-6. Never claim a feature works until it has been tested in the target environment.
+## Add a feature module
+
+A feature is represented by a `ModuleDefinition`. Its `handler` receives the running `Application` and can return a result.
+
+```python
+from universal_framework import Application, AppConfig, ModuleDefinition
+
+
+def calculate_total(app: Application) -> int:
+    price = 120
+    quantity = 3
+    return price * quantity
+
+
+app = Application(AppConfig(app_name="Sales Tool"))
+app.register_module(
+    ModuleDefinition(name="calculate_total", handler=calculate_total)
+)
+
+with app:
+    result = app.run_module("calculate_total")
+    print(result)  # 360
+```
+
+A module may also define optional `setup(app)` and `teardown(app)` functions for opening and closing resources. Setup runs in registration order; teardown runs in reverse order.
+
+## Configuration
+
+The framework reads these optional environment variables:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `APP_NAME` | `My Python App` | Display name |
+| `APP_ENV` | `development` | Environment label |
+| `APP_LOG_LEVEL` | `INFO` | DEBUG, INFO, WARNING, ERROR, or CRITICAL |
+| `APP_DATA_DIR` | `data` | Path reserved for application data |
+
+PowerShell example:
+
+```powershell
+$env:APP_NAME = "Inventory Manager"
+$env:APP_ENV = "development"
+$env:APP_LOG_LEVEL = "DEBUG"
+py your_app.py
+```
+
+## Development and quality checks
+
+Run the built-in tests:
+
+```powershell
+py -m unittest discover -s tests -v
+```
+
+Run pytest when the development extra is installed:
+
+```powershell
+py -m pytest
+```
+
+GitHub Actions runs the test suite on pushes and pull requests.
+
+## Design principles
+
+1. Keep business logic separate from UI and infrastructure.
+2. Prefer explicit configuration over hidden behavior.
+3. Validate inputs at boundaries.
+4. Log useful diagnostic information without logging secrets.
+5. Keep optional integrations optional.
+6. Test modules independently and test integrations together.
+7. Never advertise a feature as working until it has been exercised in its target environment.
 
 ## Roadmap
 
 - [x] Initialize repository and define project direction
-- [ ] Implement application lifecycle and configuration
-- [ ] Implement module registry and error/logging infrastructure
-- [ ] Add example application and unit tests
-- [ ] Add CI checks
-- [ ] Add optional adapters (CLI, desktop, web, database, API)
-- [ ] Add template generator for new projects
+- [x] Implement application lifecycle and configuration
+- [x] Implement module registry, errors, and logging
+- [x] Add example application and unit tests
+- [x] Add continuous integration test workflow
+- [ ] Add project template generator
+- [ ] Add optional CLI and desktop UI adapters
+- [ ] Add optional web UI adapter
+- [ ] Add database and API adapters
+- [ ] Add security helpers and integration testing guidance
 
 ## License
 
-License has not yet been selected. Until one is added, all rights are reserved by the repository owner.
+No open-source license has been selected yet. Until a license is added, all rights are reserved by the repository owner.
